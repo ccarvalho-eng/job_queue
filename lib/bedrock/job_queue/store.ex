@@ -271,42 +271,39 @@ defmodule Bedrock.JobQueue.Store do
       value ->
         current_item = decode(value)
 
-        if not Item.leased?(current_item, now: now) do
-          # Create lease
-          lease = Lease.new(current_item, holder, duration_ms: duration_ms, now: now)
-          lease_expires_at = now + duration_ms
-          pending_item? = current_item.lease_id == nil
-
-          # Update item with lease info and new vesting_time
-          updated_item = %{
-            current_item
-            | lease_id: lease.id,
-              lease_expires_at: lease_expires_at,
-              vesting_time: lease_expires_at
-          }
-
-          # Delete old item key (vesting_time changed)
-          repo.clear(keyspaces.items, item_key)
-
-          # Write with new key (new vesting_time)
-          new_item_key = Item.key(updated_item)
-          repo.put(keyspaces.items, new_item_key, encode(updated_item))
-
-          # Write lease record
-          repo.put(keyspaces.leases, lease.item_id, encode(lease))
-
-          # Update pointer and stats
-          update_pointer(repo, pointers, lease_expires_at, item.queue_id, now)
-
-          if pending_item? do
-            update_stats(repo, keyspaces, -1, 1)
-          end
-
-          {:ok, lease}
-        else
+        if Item.leased?(current_item, now: now) do
           {:error, :already_leased}
+        else
+          do_obtain_lease(repo, keyspaces, pointers, current_item, holder, duration_ms, now)
         end
     end
+  end
+
+  defp do_obtain_lease(repo, keyspaces, pointers, current_item, holder, duration_ms, now) do
+    lease = Lease.new(current_item, holder, duration_ms: duration_ms, now: now)
+    lease_expires_at = now + duration_ms
+    pending_item? = current_item.lease_id == nil
+
+    updated_item = %{
+      current_item
+      | lease_id: lease.id,
+        lease_expires_at: lease_expires_at,
+        vesting_time: lease_expires_at
+    }
+
+    repo.clear(keyspaces.items, Item.key(current_item))
+
+    new_item_key = Item.key(updated_item)
+    repo.put(keyspaces.items, new_item_key, encode(updated_item))
+    repo.put(keyspaces.leases, lease.item_id, encode(lease))
+
+    update_pointer(repo, pointers, lease_expires_at, current_item.queue_id, now)
+
+    if pending_item? do
+      update_stats(repo, keyspaces, -1, 1)
+    end
+
+    {:ok, lease}
   end
 
   @doc """
