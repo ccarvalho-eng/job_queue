@@ -83,13 +83,22 @@ defmodule Bedrock.JobQueue.Item do
   end
 
   @doc """
-  Returns true if the job is currently visible (vesting_time has passed and not leased).
+  Returns true if the job is currently visible.
+
+  An item is visible when its vesting time has passed and it is not actively
+  leased. Expired leases are considered visible so another worker can reclaim
+  stale work.
   """
   @spec visible?(t()) :: boolean()
   @spec visible?(t(), non_neg_integer()) :: boolean()
   def visible?(item, now \\ System.system_time(:millisecond))
 
   def visible?(%__MODULE__{vesting_time: vt, lease_id: nil}, now), do: now >= vt
+
+  def visible?(%__MODULE__{vesting_time: vt, lease_expires_at: exp}, now)
+      when not is_nil(exp) do
+    now >= vt and now >= exp
+  end
 
   def visible?(%__MODULE__{}, _now), do: false
 

@@ -271,10 +271,11 @@ defmodule Bedrock.JobQueue.Store do
       value ->
         current_item = decode(value)
 
-        if current_item.lease_id == nil do
+        if not Item.leased?(current_item, now: now) do
           # Create lease
           lease = Lease.new(current_item, holder, duration_ms: duration_ms, now: now)
           lease_expires_at = now + duration_ms
+          pending_item? = current_item.lease_id == nil
 
           # Update item with lease info and new vesting_time
           updated_item = %{
@@ -296,7 +297,10 @@ defmodule Bedrock.JobQueue.Store do
 
           # Update pointer and stats
           update_pointer(repo, pointers, lease_expires_at, item.queue_id, now)
-          update_stats(repo, keyspaces, -1, 1)
+
+          if pending_item? do
+            update_stats(repo, keyspaces, -1, 1)
+          end
 
           {:ok, lease}
         else
@@ -497,13 +501,13 @@ defmodule Bedrock.JobQueue.Store do
       # Explicit base_delay overrides backoff_fn (used by snooze)
       base_delay = Keyword.get(opts, :base_delay) ->
         max_delay = Keyword.get(opts, :max_delay, 60_000)
-        (base_delay * :math.pow(2, error_count)) |> trunc() |> min(max_delay)
+        (base_delay * :math.pow(2, error_count - 1)) |> trunc() |> min(max_delay)
 
       backoff_fn = Keyword.get(opts, :backoff_fn) ->
         backoff_fn.(error_count)
 
       true ->
-        (1000 * :math.pow(2, error_count)) |> trunc() |> min(60_000)
+        (1000 * :math.pow(2, error_count - 1)) |> trunc() |> min(60_000)
     end
   end
 
