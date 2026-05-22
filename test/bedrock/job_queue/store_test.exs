@@ -152,6 +152,18 @@ defmodule Bedrock.JobQueue.StoreTest do
 
       refute Item.visible?(item, now)
     end
+
+    test "items with expired lease are visible again" do
+      now = 10_000
+
+      item = %{
+        Item.new("queue", "topic", %{}, vesting_time: 9_000)
+        | lease_id: <<1, 2, 3>>,
+          lease_expires_at: 9_000
+      }
+
+      assert Item.visible?(item, now)
+    end
   end
 
   describe "Lease creation" do
@@ -352,6 +364,62 @@ defmodule Bedrock.JobQueue.StoreTest do
         Store.dequeue(MockRepo, root(), "tenant_1", "holder", limit: 5, lease_duration: 5000)
 
       assert {:ok, []} = result
+    end
+
+    test "reclaims items whose lease expired" do
+      now = 10_000
+      queue_id = "tenant_1"
+      keyspaces = Store.queue_keyspaces(root(), queue_id)
+      item = Item.new(queue_id, "topic", %{n: 1}, vesting_time: 8_000)
+      expired_lease = Lease.new(item, "old_holder", duration_ms: 1_000, now: 8_000)
+
+      leased_item = %{
+        item
+        | lease_id: expired_lease.id,
+          lease_expires_at: expired_lease.expires_at,
+          vesting_time: expired_lease.expires_at
+      }
+
+      {:ok, store} = start_mock_store()
+      setup_integration_stubs(MockRepo, store)
+      store_item(store, keyspaces.items, leased_item)
+
+      assert [%Item{id: item_id}] = Store.peek(MockRepo, root(), queue_id, now: now)
+      assert item_id == item.id
+
+      assert {:ok, [%Lease{holder: "new_holder"}]} =
+               Store.dequeue(MockRepo, root(), queue_id, "new_holder",
+                 now: now,
+                 lease_duration: 5_000
+               )
+    end
+  end
+
+  describe "requeue/4" do
+    test "uses base_delay for the first retry visibility time" do
+      now = 10_000
+      queue_id = "tenant_1"
+      keyspaces = Store.queue_keyspaces(root(), queue_id)
+      item = Item.new(queue_id, "topic", %{n: 1}, max_retries: 3, vesting_time: now)
+      lease = Lease.new(item, "holder", duration_ms: 5_000, now: now)
+
+      leased_item = %{
+        item
+        | lease_id: lease.id,
+          lease_expires_at: lease.expires_at,
+          vesting_time: lease.expires_at
+      }
+
+      {:ok, store} = start_mock_store()
+      setup_integration_stubs(MockRepo, store)
+      store_item(store, keyspaces.items, leased_item)
+
+      assert {:ok, :requeued} = Store.requeue(MockRepo, root(), lease, now: now, base_delay: 1_000)
+      assert [] = Store.peek(MockRepo, root(), queue_id, now: now + 999)
+      assert [%Item{id: item_id, error_count: 1}] =
+               Store.peek(MockRepo, root(), queue_id, now: now + 1_000)
+
+      assert item_id == item.id
     end
   end
 
