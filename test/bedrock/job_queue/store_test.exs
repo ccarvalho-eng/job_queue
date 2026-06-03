@@ -463,6 +463,7 @@ defmodule Bedrock.JobQueue.StoreTest do
       {:ok, store} = start_mock_store()
       setup_integration_stubs(MockRepo, store)
       store_item(store, keyspaces.items, leased_item)
+      MockRepo.put(keyspaces.leases, lease.item_id, :erlang.term_to_binary(lease))
 
       assert {:ok, :requeued} = Store.requeue(MockRepo, root(), lease, now: now, base_delay: 1_000)
       assert [] = Store.peek(MockRepo, root(), queue_id, now: now + 999)
