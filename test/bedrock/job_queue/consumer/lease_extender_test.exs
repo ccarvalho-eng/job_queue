@@ -137,6 +137,8 @@ defmodule Bedrock.JobQueue.Consumer.LeaseExtenderTest do
         capture_log(fn ->
           pid = LeaseExtender.start(MockRepo, ctx.root, ctx.lease, 30_000, interval: 10)
           assert_receive :done, 100
+          Process.sleep(10)
+          Logger.flush()
           LeaseExtender.stop(pid)
         end)
 
@@ -162,6 +164,8 @@ defmodule Bedrock.JobQueue.Consumer.LeaseExtenderTest do
         capture_log(fn ->
           pid = LeaseExtender.start(MockRepo, ctx.root, ctx.lease, 30_000, interval: 10)
           assert_receive :done, 100
+          Process.sleep(10)
+          Logger.flush()
           LeaseExtender.stop(pid)
         end)
 
@@ -189,9 +193,9 @@ defmodule Bedrock.JobQueue.Consumer.LeaseExtenderTest do
             expires_at: System.system_time(:millisecond) + 30_000
           }, 30_000, interval: 10)
           assert_receive :done, 100
-          LeaseExtender.stop(pid)
-          # Allow time for log to be captured
           Process.sleep(10)
+          Logger.flush()
+          LeaseExtender.stop(pid)
         end)
 
       assert log =~ "Transaction failed extending lease"

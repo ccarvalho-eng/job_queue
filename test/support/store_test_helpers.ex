@@ -25,6 +25,7 @@ defmodule Bedrock.JobQueue.Test.StoreHelpers do
   import ExUnit.Assertions
   import Mox
 
+  alias Bedrock.Encoding.Tuple, as: TupleEncoding
   alias Bedrock.JobQueue.Item
   alias Bedrock.JobQueue.Lease
   alias Bedrock.JobQueue.QueueLease
@@ -350,7 +351,10 @@ defmodule Bedrock.JobQueue.Test.StoreHelpers do
 
   defp key_in_range?(_, _, _), do: false
 
-  defp extract_key_value({{prefix, _k}, v}), do: {prefix, v}
+  defp extract_key_value({{prefix, key}, v}) when is_tuple(key),
+    do: {prefix <> TupleEncoding.pack(key), v}
+
+  defp extract_key_value({{prefix, key}, v}) when is_binary(key), do: {prefix <> key, v}
   defp extract_key_value({k, v}), do: {k, v}
 
   @doc """
