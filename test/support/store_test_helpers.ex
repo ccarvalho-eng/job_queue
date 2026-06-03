@@ -28,6 +28,7 @@ defmodule Bedrock.JobQueue.Test.StoreHelpers do
   alias Bedrock.JobQueue.Item
   alias Bedrock.JobQueue.Lease
   alias Bedrock.JobQueue.QueueLease
+  alias Bedrock.JobQueue.Store
   alias Bedrock.Keyspace
 
   # ============================================================================
@@ -130,7 +131,7 @@ defmodule Bedrock.JobQueue.Test.StoreHelpers do
   """
   def expect_peek(repo, queue_id, items) do
     root = Keyspace.new("job_queue/")
-    keyspaces = Bedrock.JobQueue.Store.queue_keyspaces(root, queue_id)
+    keyspaces = Store.queue_keyspaces(root, queue_id)
     prefix = Keyspace.prefix(keyspaces.items)
 
     expect(repo, :get_range, fn {start_key, end_key}, opts ->
