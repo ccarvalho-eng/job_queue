@@ -81,6 +81,27 @@ defmodule Bedrock.JobQueue.StoreTest do
   end
 
   describe "peek/4 priority ordering" do
+    test "scans raw key ranges for tuple-encoded item keys" do
+      queue_id = "tenant_1"
+      keyspaces = Store.queue_keyspaces(root(), queue_id)
+      item = Item.new(queue_id, "topic", %{}, priority: 100, vesting_time: 1000)
+      encoded_item = :erlang.term_to_binary(item)
+      packed_item_key = Keyspace.pack(keyspaces.items, Item.key(item))
+
+      expect(MockRepo, :get_range, fn
+        %Keyspace{}, _opts ->
+          flunk("tuple-encoded item keyspaces must be scanned as raw ranges")
+
+        {start_key, end_key}, _opts when is_binary(start_key) and is_binary(end_key) ->
+          assert packed_item_key >= start_key
+          assert packed_item_key < end_key
+          [{packed_item_key, encoded_item}]
+      end)
+
+      assert [%Item{id: item_id}] = Store.peek(MockRepo, root(), queue_id, limit: 10, now: 2000)
+      assert item_id == item.id
+    end
+
     test "returns items in priority order (lowest number first)" do
       # Create items with different priorities
       high_priority = Item.new("tenant_1", "topic", %{}, priority: 10, vesting_time: 1000)
@@ -95,7 +116,7 @@ defmodule Bedrock.JobQueue.StoreTest do
       ]
 
       # Mock returns items in arbitrary order - peek should sort by key
-      expect(MockRepo, :get_range, fn %Keyspace{}, _opts ->
+      expect(MockRepo, :get_range, fn {_start_key, _end_key}, _opts ->
         # Return sorted by key (simulating DB behavior)
         Enum.sort_by(items, fn {key, _} -> key end)
       end)
@@ -119,7 +140,7 @@ defmodule Bedrock.JobQueue.StoreTest do
         {Item.key(earlier), :erlang.term_to_binary(earlier)}
       ]
 
-      expect(MockRepo, :get_range, fn %Keyspace{}, _opts ->
+      expect(MockRepo, :get_range, fn {_start_key, _end_key}, _opts ->
         Enum.sort_by(items, fn {key, _} -> key end)
       end)
 

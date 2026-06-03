@@ -123,17 +123,19 @@ defmodule Bedrock.JobQueue.Test.StoreHelpers do
   # ============================================================================
 
   @doc """
-  Expects a get_range on the items keyspace for a specific queue_id.
-  Verifies the keyspace contains items path and returns the given items.
+  Expects a raw get_range over the items keyspace for a specific queue_id.
+  Verifies the key range contains the queue items path and returns the given items.
 
   Items should be a list of `{key, encoded_value}` tuples.
   """
   def expect_peek(repo, queue_id, items) do
-    expect(repo, :get_range, fn %Keyspace{} = ks, opts ->
-      prefix = Keyspace.prefix(ks)
+    root = Keyspace.new("job_queue/")
+    keyspaces = Bedrock.JobQueue.Store.queue_keyspaces(root, queue_id)
+    prefix = Keyspace.prefix(keyspaces.items)
 
-      assert String.contains?(prefix, "queues/#{queue_id}/items/"),
-             "Expected items keyspace for queue #{queue_id}, got: #{prefix}"
+    expect(repo, :get_range, fn {start_key, end_key}, opts ->
+      assert start_key == prefix
+      assert end_key > prefix
 
       assert is_list(opts), "Expected opts to be a list"
       items

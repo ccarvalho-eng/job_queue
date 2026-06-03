@@ -192,7 +192,7 @@ defmodule Bedrock.JobQueue.Store do
     # Uses Stream to avoid loading all items into memory
     # Stops early once we have enough visible items OR hit max_scan
     keyspaces.items
-    |> repo.get_range(limit: max_scan)
+    |> raw_keyspace_range(repo, limit: max_scan)
     |> Stream.map(fn {_key, value} -> decode(value) end)
     |> Stream.filter(&Item.visible?(&1, now))
     |> Enum.take(limit)
@@ -542,7 +542,7 @@ defmodule Bedrock.JobQueue.Store do
     # Scan all items and find minimum vesting_time
     # Items are sorted by {priority, vesting_time, id}, so we need to check all
     keyspaces.items
-    |> repo.get_range(limit: limit)
+    |> raw_keyspace_range(repo, limit: limit)
     |> Enum.reduce(nil, fn {_key, value}, acc ->
       item = decode(value)
 
@@ -687,7 +687,7 @@ defmodule Bedrock.JobQueue.Store do
 
   defp queue_empty?(repo, root, queue_id) do
     keyspaces = queue_keyspaces(root, queue_id)
-    repo.get_range(keyspaces.items, limit: 1) == []
+    raw_keyspace_range(keyspaces.items, repo, limit: 1) == []
   end
 
   # Private helpers
@@ -719,6 +719,14 @@ defmodule Bedrock.JobQueue.Store do
 
   defp decode_timestamp(nil), do: 0
   defp decode_timestamp(<<time::64-little>>), do: time
+
+  defp raw_keyspace_range(keyspace, repo, opts) do
+    prefix = Keyspace.prefix(keyspace)
+
+    prefix
+    |> Bedrock.KeyRange.from_prefix()
+    |> repo.get_range(opts)
+  end
 
   # Atomically updates pending and processing stats
   defp update_stats(repo, keyspaces, pending_delta, processing_delta) do
