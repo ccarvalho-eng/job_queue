@@ -135,7 +135,7 @@ defmodule Bedrock.JobQueue.Consumer.LeaseExtenderTest do
 
       log =
         capture_log(fn ->
-          pid = LeaseExtender.start(MockRepo, ctx.root, ctx.lease, 30_000, interval: 10)
+          pid = LeaseExtender.start(MockRepo, ctx.root, ctx.lease, 30_000, interval: 50)
           assert_receive :done, 100
           Process.sleep(10)
           Logger.flush()
@@ -162,7 +162,7 @@ defmodule Bedrock.JobQueue.Consumer.LeaseExtenderTest do
 
       log =
         capture_log(fn ->
-          pid = LeaseExtender.start(MockRepo, ctx.root, ctx.lease, 30_000, interval: 10)
+          pid = LeaseExtender.start(MockRepo, ctx.root, ctx.lease, 30_000, interval: 50)
           assert_receive :done, 100
           Process.sleep(10)
           Logger.flush()
@@ -191,7 +191,7 @@ defmodule Bedrock.JobQueue.Consumer.LeaseExtenderTest do
             holder: @holder_id,
             obtained_at: System.system_time(:millisecond),
             expires_at: System.system_time(:millisecond) + 30_000
-          }, 30_000, interval: 10)
+          }, 30_000, interval: 50)
           assert_receive :done, 100
           Process.sleep(10)
           Logger.flush()
