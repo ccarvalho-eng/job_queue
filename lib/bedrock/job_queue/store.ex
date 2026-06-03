@@ -387,8 +387,7 @@ defmodule Bedrock.JobQueue.Store do
 
     case verify_lease(repo, keyspaces, lease) do
       {:ok, stored_lease} ->
-        # Use provided item_key or fall back to stored lease's item_key
-        item_key = lease.item_key || stored_lease.item_key
+        item_key = stored_lease.item_key
         repo.clear(keyspaces.items, item_key)
         repo.clear(keyspaces.leases, lease.item_id)
 
@@ -430,15 +429,11 @@ defmodule Bedrock.JobQueue.Store do
     pointers = pointer_keyspace(root)
     now = Keyword.get(opts, :now) || System.system_time(:millisecond)
 
-    # Get item_key from lease or fetch from stored lease
     with {:ok, item_key} <- resolve_item_key(repo, keyspaces, lease),
          {:ok, item} <- fetch_item(repo, keyspaces, item_key) do
       do_requeue(repo, keyspaces, pointers, lease, item, item_key, opts, now)
     end
   end
-
-  defp resolve_item_key(_repo, _keyspaces, %Lease{item_key: item_key}) when item_key != nil,
-    do: {:ok, item_key}
 
   defp resolve_item_key(repo, keyspaces, %Lease{} = lease) do
     case verify_lease(repo, keyspaces, lease) do

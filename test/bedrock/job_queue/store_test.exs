@@ -416,6 +416,35 @@ defmodule Bedrock.JobQueue.StoreTest do
     end
   end
 
+  describe "complete/3" do
+    test "uses the stored lease item key when the caller lease is stale" do
+      now = 10_000
+      queue_id = "tenant_1"
+      keyspaces = Store.queue_keyspaces(root(), queue_id)
+      item = Item.new(queue_id, "topic", %{n: 1}, vesting_time: now)
+      stale_lease = Lease.new(item, "holder", duration_ms: 5_000, now: now)
+      extended_expires_at = stale_lease.expires_at + 5_000
+      current_item_key = {item.priority, extended_expires_at, item.id}
+      stored_lease = %{stale_lease | expires_at: extended_expires_at, item_key: current_item_key}
+
+      current_item = %{
+        item
+        | lease_id: stale_lease.id,
+          lease_expires_at: extended_expires_at,
+          vesting_time: extended_expires_at
+      }
+
+      {:ok, store} = start_mock_store()
+      setup_integration_stubs(MockRepo, store)
+      store_item(store, keyspaces.items, current_item)
+      MockRepo.put(keyspaces.leases, stale_lease.item_id, :erlang.term_to_binary(stored_lease))
+
+      assert :ok = Store.complete(MockRepo, root(), stale_lease)
+      assert MockRepo.get(keyspaces.items, current_item_key) == nil
+      assert MockRepo.get(keyspaces.leases, stale_lease.item_id) == nil
+    end
+  end
+
   describe "requeue/4" do
     test "uses base_delay for the first retry visibility time" do
       now = 10_000
@@ -438,6 +467,39 @@ defmodule Bedrock.JobQueue.StoreTest do
       assert {:ok, :requeued} = Store.requeue(MockRepo, root(), lease, now: now, base_delay: 1_000)
       assert [] = Store.peek(MockRepo, root(), queue_id, now: now + 999)
       assert [%Item{id: item_id, error_count: 1}] =
+               Store.peek(MockRepo, root(), queue_id, now: now + 1_000)
+
+      assert item_id == item.id
+    end
+
+    test "uses the stored lease item key when the caller lease is stale" do
+      now = 10_000
+      queue_id = "tenant_1"
+      keyspaces = Store.queue_keyspaces(root(), queue_id)
+      item = Item.new(queue_id, "topic", %{n: 1}, max_retries: 3, vesting_time: now)
+      stale_lease = Lease.new(item, "holder", duration_ms: 5_000, now: now)
+      extended_expires_at = stale_lease.expires_at + 5_000
+      current_item_key = {item.priority, extended_expires_at, item.id}
+      stored_lease = %{stale_lease | expires_at: extended_expires_at, item_key: current_item_key}
+
+      current_item = %{
+        item
+        | lease_id: stale_lease.id,
+          lease_expires_at: extended_expires_at,
+          vesting_time: extended_expires_at
+      }
+
+      {:ok, store} = start_mock_store()
+      setup_integration_stubs(MockRepo, store)
+      store_item(store, keyspaces.items, current_item)
+      MockRepo.put(keyspaces.leases, stale_lease.item_id, :erlang.term_to_binary(stored_lease))
+
+      assert {:ok, :requeued} =
+               Store.requeue(MockRepo, root(), stale_lease, now: now, base_delay: 1_000)
+
+      assert MockRepo.get(keyspaces.items, current_item_key) == nil
+
+      assert [%Item{id: item_id, error_count: 1, lease_id: nil}] =
                Store.peek(MockRepo, root(), queue_id, now: now + 1_000)
 
       assert item_id == item.id
